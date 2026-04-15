@@ -42,6 +42,17 @@ def main():
                 return
             result = MediumPoster().post(content)
 
+        elif args.platform == "instagram":
+            from generators.instagram_generator import InstagramGenerator
+            from posters.instagram_poster import InstagramPoster
+            content = InstagramGenerator().generate(niche, product)
+            print(f"\n  Caption: {content.get('caption','')[:100]}...")
+            print(f"  Hashtags: {' '.join(content.get('hashtags',[]))}")
+            if args.dry_run:
+                print("\n  [dry-run] Skipping post")
+                return
+            result = InstagramPoster().post(content)
+
         else:
             print(f"  ⚠️  Platform '{args.platform}' not yet implemented")
             return
