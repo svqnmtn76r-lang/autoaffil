@@ -24,11 +24,11 @@ NICHE_PRODUCT_MAP = {
         "network": "amazon_associates_au",
     },
     "productivity": {
-        "product": "Notion",
-        "description": "All-in-one workspace — notes, tasks, databases",
-        # Notionアフィリプログラム新規受付停止中 → 別プログラム検討
+        "product": "ClickUp",
+        "description": "All-in-one productivity platform — tasks, docs, goals, free forever plan",
+        # ClickUp affiliate (Impact) 承認待ち → 承認後にリンクを追加
         "affiliate_link": "",
-        "network": "notion",
+        "network": "impact",
     },
     "psychology": {
         "product": "Audible",
