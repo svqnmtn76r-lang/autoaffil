@@ -1,0 +1,27 @@
+name: Post to Medium
+
+on:
+  schedule:
+    - cron: '0 0 * * 1,3,5'   # 月・水・金 UTC 00:00 = AEST 10:00
+  workflow_dispatch:
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and Post to Medium (via GitHub Pages)
+        env:
+          ANTHROPIC_API_KEY:   ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN:        ${{ secrets.GH_PAT }}
+          GOOGLE_SHEETS_CREDS: ${{ secrets.GOOGLE_SHEETS_CREDS }}
+          SPREADSHEET_ID:      ${{ secrets.SPREADSHEET_ID }}
+        run: python main_runner.py --platform medium

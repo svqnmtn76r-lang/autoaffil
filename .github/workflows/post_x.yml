@@ -1,0 +1,32 @@
+name: Post to X
+
+on:
+  schedule:
+    - cron: '0 2 * * *'    # US West evening  (UTC 02:00 = US West 18:00)
+    - cron: '0 8 * * *'    # UK morning       (UTC 08:00)
+    - cron: '0 11 * * *'   # AU/NZ prime      (UTC 11:00 = AEST 21:00)
+  workflow_dispatch:
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and Post to X
+        env:
+          ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
+          X_CLIENT_ID:            ${{ secrets.X_CLIENT_ID }}
+          X_CLIENT_SECRET:        ${{ secrets.X_CLIENT_SECRET }}
+          X_OAUTH2_ACCESS_TOKEN:  ${{ secrets.X_OAUTH2_ACCESS_TOKEN }}
+          X_OAUTH2_REFRESH_TOKEN: ${{ secrets.X_OAUTH2_REFRESH_TOKEN }}
+          GOOGLE_SHEETS_CREDS:    ${{ secrets.GOOGLE_SHEETS_CREDS }}
+          SPREADSHEET_ID:         ${{ secrets.SPREADSHEET_ID }}
+        run: python main_runner.py --platform x
