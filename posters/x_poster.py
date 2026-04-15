@@ -1,68 +1,64 @@
 import os
-import json
 import time
-import hmac
-import hashlib
 import base64
-import urllib.parse
-import secrets
 import requests
-from datetime import datetime, timezone
 
 
-def _oauth1_header(method: str, url: str, params: dict = None) -> str:
-    """OAuth1 Authorization ヘッダーを生成"""
-    consumer_key    = os.environ.get("X_CONSUMER_KEY", "")
-    consumer_secret = os.environ.get("X_CONSUMER_SECRET", "")
-    access_token    = os.environ.get("X_ACCESS_TOKEN", "")
-    token_secret    = os.environ.get("X_ACCESS_TOKEN_SECRET", "")
+def _get_access_token() -> str:
+    """OAuth2 アクセストークンを取得（期限切れなら自動リフレッシュ）"""
+    token = os.environ.get("X_OAUTH2_ACCESS_TOKEN", "")
+    if not token:
+        raise RuntimeError("X_OAUTH2_ACCESS_TOKEN is not set")
 
-    if not all([consumer_key, consumer_secret, access_token, token_secret]):
-        raise RuntimeError("X OAuth1 credentials not set (X_CONSUMER_KEY/SECRET, X_ACCESS_TOKEN/SECRET)")
-
-    oauth_params = {
-        "oauth_consumer_key":     consumer_key,
-        "oauth_nonce":            secrets.token_hex(16),
-        "oauth_signature_method": "HMAC-SHA1",
-        "oauth_timestamp":        str(int(datetime.now(timezone.utc).timestamp())),
-        "oauth_token":            access_token,
-        "oauth_version":          "1.0",
-    }
-
-    # シグネチャ生成
-    all_params = {**(params or {}), **oauth_params}
-    sorted_params = "&".join(
-        f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(str(v), safe='')}"
-        for k, v in sorted(all_params.items())
+    # 有効性チェック
+    resp = requests.get(
+        "https://api.twitter.com/2/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=15,
     )
-    base_string = "&".join([
-        method.upper(),
-        urllib.parse.quote(url, safe=""),
-        urllib.parse.quote(sorted_params, safe=""),
-    ])
-    signing_key = f"{urllib.parse.quote(consumer_secret, safe='')}&{urllib.parse.quote(token_secret, safe='')}"
-    signature   = base64.b64encode(
-        hmac.new(signing_key.encode(), base_string.encode(), hashlib.sha1).digest()
-    ).decode()
-    oauth_params["oauth_signature"] = signature
+    if resp.status_code == 200:
+        return token
 
-    header = "OAuth " + ", ".join(
-        f'{urllib.parse.quote(k, safe="")}="{urllib.parse.quote(v, safe="")}"'
-        for k, v in sorted(oauth_params.items())
-    )
-    return header
+    # 期限切れ → リフレッシュ
+    refresh_token = os.environ.get("X_OAUTH2_REFRESH_TOKEN", "")
+    client_id     = os.environ.get("X_CLIENT_ID", "")
+    client_secret = os.environ.get("X_CLIENT_SECRET", "")
+    if not refresh_token or not client_id:
+        raise RuntimeError("X OAuth2 refresh credentials not set")
+
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data    = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+    if client_secret:
+        creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        headers["Authorization"] = f"Basic {creds}"
+    else:
+        data["client_id"] = client_id
+
+    r = requests.post("https://api.x.com/2/oauth2/token", headers=headers, data=data, timeout=15)
+    if not r.ok:
+        raise RuntimeError(f"Token refresh failed {r.status_code}: {r.text}")
+
+    new_token = r.json().get("access_token", "")
+    if not new_token:
+        raise RuntimeError(f"No access_token in refresh response: {r.text}")
+
+    os.environ["X_OAUTH2_ACCESS_TOKEN"] = new_token
+    if r.json().get("refresh_token"):
+        os.environ["X_OAUTH2_REFRESH_TOKEN"] = r.json()["refresh_token"]
+    print("  ✓ X OAuth2 token refreshed")
+    return new_token
 
 
 def _post_tweet(text: str, reply_to_id: str = None) -> str:
+    token   = _get_access_token()
     url     = "https://api.twitter.com/2/tweets"
     payload = {"text": text}
     if reply_to_id:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
 
-    header = _oauth1_header("POST", url)
-    resp   = requests.post(
+    resp = requests.post(
         url,
-        headers={"Authorization": header, "Content-Type": "application/json"},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         json=payload,
         timeout=30,
     )
@@ -91,13 +87,19 @@ class XPoster:
         if link_reply:
             time.sleep(2)
             print(f"  📤 Posting link reply...")
-            reply_id = _post_tweet(link_reply, reply_to_id=tweet_id)
-            print(f"  ✅ Link reply posted: {reply_id}")
+            try:
+                reply_id = _post_tweet(link_reply, reply_to_id=tweet_id)
+                print(f"  ✅ Link reply posted: {reply_id}")
+            except Exception as e:
+                print(f"  ⚠️  Link reply skipped: {e}")
 
         if engagement_reply:
             time.sleep(2)
             print(f"  📤 Posting engagement reply...")
-            _post_tweet(engagement_reply, reply_to_id=tweet_id)
-            print(f"  ✅ Engagement reply posted")
+            try:
+                _post_tweet(engagement_reply, reply_to_id=tweet_id)
+                print(f"  ✅ Engagement reply posted")
+            except Exception as e:
+                print(f"  ⚠️  Engagement reply skipped: {e}")
 
         return f"https://x.com/i/web/status/{tweet_id}"
