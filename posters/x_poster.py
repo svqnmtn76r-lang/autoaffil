@@ -1,67 +1,78 @@
 import os
 import json
-import base64
 import time
+import hmac
+import hashlib
+import base64
 import urllib.request
 import urllib.error
+import urllib.parse
+import secrets
+from datetime import datetime, timezone
 
 
-def _refresh_token() -> str:
-    client_id     = os.environ.get("X_CLIENT_ID", "")
-    client_secret = os.environ.get("X_CLIENT_SECRET", "")
-    refresh_token = os.environ.get("X_OAUTH2_REFRESH_TOKEN", "")
-    if not refresh_token or not client_id:
-        raise RuntimeError("X OAuth2 credentials not set")
+def _oauth1_header(method: str, url: str, params: dict = None) -> str:
+    """OAuth1 Authorization ヘッダーを生成"""
+    consumer_key    = os.environ.get("X_CONSUMER_KEY", "")
+    consumer_secret = os.environ.get("X_CONSUMER_SECRET", "")
+    access_token    = os.environ.get("X_ACCESS_TOKEN", "")
+    token_secret    = os.environ.get("X_ACCESS_TOKEN_SECRET", "")
 
-    body = f"grant_type=refresh_token&refresh_token={refresh_token}"
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    if client_secret:
-        credentials = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-        headers["Authorization"] = f"Basic {credentials}"
-    else:
-        body += f"&client_id={client_id}"
+    if not all([consumer_key, consumer_secret, access_token, token_secret]):
+        raise RuntimeError("X OAuth1 credentials not set (X_CONSUMER_KEY/SECRET, X_ACCESS_TOKEN/SECRET)")
 
-    req = urllib.request.Request(
-        "https://api.x.com/2/oauth2/token",
-        data=body.encode(), headers=headers, method="POST",
+    oauth_params = {
+        "oauth_consumer_key":     consumer_key,
+        "oauth_nonce":            secrets.token_hex(16),
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp":        str(int(datetime.now(timezone.utc).timestamp())),
+        "oauth_token":            access_token,
+        "oauth_version":          "1.0",
+    }
+
+    # シグネチャ生成
+    all_params = {**(params or {}), **oauth_params}
+    sorted_params = "&".join(
+        f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(str(v), safe='')}"
+        for k, v in sorted(all_params.items())
     )
-    with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read())
-    if "access_token" not in data:
-        raise RuntimeError(f"Token refresh failed: {data}")
-    os.environ["X_OAUTH2_ACCESS_TOKEN"] = data["access_token"]
-    if "refresh_token" in data:
-        os.environ["X_OAUTH2_REFRESH_TOKEN"] = data["refresh_token"]
-    return data["access_token"]
+    base_string = "&".join([
+        method.upper(),
+        urllib.parse.quote(url, safe=""),
+        urllib.parse.quote(sorted_params, safe=""),
+    ])
+    signing_key = f"{urllib.parse.quote(consumer_secret, safe='')}&{urllib.parse.quote(token_secret, safe='')}"
+    signature   = base64.b64encode(
+        hmac.new(signing_key.encode(), base_string.encode(), hashlib.sha1).digest()
+    ).decode()
+    oauth_params["oauth_signature"] = signature
+
+    header = "OAuth " + ", ".join(
+        f'{urllib.parse.quote(k, safe="")}="{urllib.parse.quote(v, safe="")}"'
+        for k, v in sorted(oauth_params.items())
+    )
+    return header
 
 
 def _post_tweet(text: str, reply_to_id: str = None) -> str:
-    token = os.environ.get("X_OAUTH2_ACCESS_TOKEN", "")
-    if not token:
-        raise RuntimeError("X_OAUTH2_ACCESS_TOKEN not set")
-
+    url     = "https://api.twitter.com/2/tweets"
     payload = {"text": text}
     if reply_to_id:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
 
-    body = json.dumps(payload).encode()
+    body   = json.dumps(payload).encode()
+    header = _oauth1_header("POST", url)
+
     req = urllib.request.Request(
-        "https://api.twitter.com/2/tweets",
-        data=body,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        url, data=body,
+        headers={"Authorization": header, "Content-Type": "application/json"},
         method="POST",
     )
     try:
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        if e.code == 401:
-            new_token = _refresh_token()
-            req.headers["Authorization"] = f"Bearer {new_token}"
-            with urllib.request.urlopen(req) as resp:
-                data = json.loads(resp.read())
-        else:
-            raise RuntimeError(f"Tweet failed {e.code}: {e.read().decode()}")
+        raise RuntimeError(f"Tweet failed {e.code}: {e.read().decode()}")
 
     if "data" in data and "id" in data["data"]:
         return data["data"]["id"]
