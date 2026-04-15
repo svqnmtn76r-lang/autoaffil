@@ -26,7 +26,8 @@ NICHE_PRODUCT_MAP = {
     "productivity": {
         "product": "Notion",
         "description": "All-in-one workspace — notes, tasks, databases",
-        "affiliate_link": "https://affiliate.notion.so/hiroyama",
+        # Notionアフィリプログラム新規受付停止中 → 別プログラム検討
+        "affiliate_link": "",
         "network": "notion",
     },
     "psychology": {
