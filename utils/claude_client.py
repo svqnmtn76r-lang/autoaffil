@@ -1,7 +1,6 @@
 import os
 import json
-import urllib.request
-import urllib.error
+import requests
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 DEFAULT_MODEL      = "claude-haiku-4-5-20251001"
@@ -13,29 +12,24 @@ def _call(model: str, system: str, user: str, max_tokens: int) -> str:
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set")
 
-    payload = json.dumps({
-        "model": model,
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": [{"role": "user", "content": user}],
-    }).encode()
-
-    req = urllib.request.Request(
+    resp = requests.post(
         ANTHROPIC_API_URL,
-        data=payload,
         headers={
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },
-        method="POST",
+        json={
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        },
+        timeout=60,
     )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read())
-            return data["content"][0]["text"]
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Claude API {e.code}: {e.read().decode()}")
+    if not resp.ok:
+        raise RuntimeError(f"Claude API {resp.status_code}: {resp.text}")
+    return resp.json()["content"][0]["text"]
 
 
 def generate(system: str, user: str, max_tokens: int = 1500) -> str:

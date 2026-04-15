@@ -4,10 +4,9 @@ import time
 import hmac
 import hashlib
 import base64
-import urllib.request
-import urllib.error
 import urllib.parse
 import secrets
+import requests
 from datetime import datetime, timezone
 
 
@@ -60,19 +59,16 @@ def _post_tweet(text: str, reply_to_id: str = None) -> str:
     if reply_to_id:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
 
-    body   = json.dumps(payload).encode()
     header = _oauth1_header("POST", url)
-
-    req = urllib.request.Request(
-        url, data=body,
+    resp   = requests.post(
+        url,
         headers={"Authorization": header, "Content-Type": "application/json"},
-        method="POST",
+        json=payload,
+        timeout=30,
     )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Tweet failed {e.code}: {e.read().decode()}")
+    if not resp.ok:
+        raise RuntimeError(f"Tweet failed {resp.status_code}: {resp.text}")
+    data = resp.json()
 
     if "data" in data and "id" in data["data"]:
         return data["data"]["id"]
