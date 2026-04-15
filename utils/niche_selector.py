@@ -6,31 +6,33 @@ NICHE_PRODUCT_MAP = {
     "finance": {
         "product": "eToro",
         "description": "Social trading platform — copy top investors automatically",
-        "affiliate_link": "https://track.commissionfactory.com/etoro",
+        # Commission Factory未登録 → リンクなし（登録後に更新）
+        "affiliate_link": "",
         "network": "commission_factory",
     },
     "health": {
         "product": "iHerb",
         "description": "Vitamins & supplements — up to 30% off + free shipping",
-        "affiliate_link": "https://track.commissionfactory.com/iherb",
+        # Commission Factory未登録 → リンクなし（登録後に更新）
+        "affiliate_link": "",
         "network": "commission_factory",
     },
     "technology": {
         "product": "Amazon Tech AU",
         "description": "Top-rated tech gadgets with fast AU delivery",
-        "affiliate_link": "https://amzn.to/tech-au",
+        "affiliate_link": "https://www.amazon.com.au/s?k=tech+gadgets&tag=hiroyama04-22",
         "network": "amazon_associates_au",
     },
     "productivity": {
         "product": "Notion",
         "description": "All-in-one workspace — notes, tasks, databases",
-        "affiliate_link": "https://notion.so/product",
-        "network": "impact",
+        "affiliate_link": "https://affiliate.notion.so/hiroyama",
+        "network": "notion",
     },
     "psychology": {
         "product": "Audible",
         "description": "Audiobooks & podcasts — first month free",
-        "affiliate_link": "https://amzn.to/audible-au",
+        "affiliate_link": "https://www.amazon.com.au/hz/audible/mlp/membership/plus?tag=hiroyama04-22",
         "network": "amazon_associates_au",
     },
 }

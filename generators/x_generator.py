@@ -5,16 +5,21 @@ from prompts.x_prompts import X_SYSTEM_PROMPT
 
 class XGenerator:
     def generate(self, niche: str, product: dict) -> dict:
+        has_link = bool(product.get("affiliate_link", ""))
+        link_instruction = (
+            f"Section 2: reply with affiliate link + CTA\nAffiliate link: {product['affiliate_link']}"
+            if has_link else
+            "Section 2: leave blank (write only '---')"
+        )
         user_prompt = f"""Create a viral X post for this affiliate product:
 
 Niche: {niche}
 Product: {product['product']}
 Description: {product['description']}
-Affiliate link: {product['affiliate_link']}
 
 Return exactly 3 sections separated by ---
 Section 1: main post (no link, under 280 chars)
-Section 2: reply with affiliate link + CTA
+{link_instruction}
 Section 3: engagement question reply"""
 
         raw = claude_client.generate(X_SYSTEM_PROMPT, user_prompt, max_tokens=800)
