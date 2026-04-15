@@ -50,7 +50,8 @@ def _markdown_to_html(md: str) -> str:
                 close_list()
                 result.append('<ol>')
                 list_type = 'ol'
-            result.append(f'<li>{inline(re.sub(r"^\d+\. ", "", t))}</li>')
+            cleaned = re.sub(r'^\d+\. ', '', t)
+            result.append(f'<li>{inline(cleaned)}</li>')
         else:
             close_list()
             result.append(f'<p>{inline(t)}</p>')
