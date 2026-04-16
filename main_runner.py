@@ -53,6 +53,27 @@ def main():
                 return
             result = InstagramPoster().post(content)
 
+        elif args.platform == "youtube":
+            from generators.youtube_generator import YouTubeGenerator
+            from posters.youtube_poster import YouTubePoster
+            content = YouTubeGenerator().generate(niche, product, fmt=args.format)
+            print(f"\n  Title: {content.get('title','')}")
+            print(f"  Format: {args.format}")
+            if args.dry_run:
+                print("\n  [dry-run] Skipping post")
+                return
+            result = YouTubePoster().post(content, fmt=args.format)
+
+        elif args.platform == "tiktok":
+            from generators.tiktok_generator import TikTokGenerator
+            from posters.tiktok_poster import TikTokPoster
+            content = TikTokGenerator().generate(niche, product)
+            print(f"\n  Caption: {content.get('caption','')[:100]}...")
+            if args.dry_run:
+                print("\n  [dry-run] Skipping post")
+                return
+            result = TikTokPoster().post(content)
+
         else:
             print(f"  ⚠️  Platform '{args.platform}' not yet implemented")
             return

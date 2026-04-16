@@ -1,0 +1,41 @@
+name: Post to YouTube
+
+on:
+  schedule:
+    - cron: '0 10 * * *'      # Shorts毎日 (UTC 10:00 = AEST 20:00)
+    - cron: '0 9 * * 1,4'     # 長尺 月・木 (UTC 09:00 = AEST 19:00)
+  workflow_dispatch:
+    inputs:
+      format:
+        description: 'shorts or longform'
+        default: 'shorts'
+        required: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and Post to YouTube
+        env:
+          ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY:         ${{ secrets.OPENAI_API_KEY }}
+          YOUTUBE_CLIENT_ID:      ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET:  ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN:  ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          GOOGLE_SHEETS_CREDS:    ${{ secrets.GOOGLE_SHEETS_CREDS }}
+          SPREADSHEET_ID:         ${{ secrets.SPREADSHEET_ID }}
+        run: |
+          FORMAT=${{ github.event.inputs.format || 'shorts' }}
+          python main_runner.py --platform youtube --format $FORMAT

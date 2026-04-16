@@ -1,0 +1,33 @@
+name: Post to TikTok
+
+on:
+  schedule:
+    - cron: '0 11 * * *'   # AU/NZ prime (UTC 11:00 = AEST 21:00)
+  workflow_dispatch:
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and Post to TikTok
+        env:
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY:       ${{ secrets.OPENAI_API_KEY }}
+          TIKTOK_CLIENT_KEY:    ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+          GOOGLE_SHEETS_CREDS:  ${{ secrets.GOOGLE_SHEETS_CREDS }}
+          SPREADSHEET_ID:       ${{ secrets.SPREADSHEET_ID }}
+        run: python main_runner.py --platform tiktok
