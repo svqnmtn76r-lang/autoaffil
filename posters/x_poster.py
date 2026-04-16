@@ -4,22 +4,8 @@ import base64
 import requests
 
 
-def _get_access_token() -> str:
-    """OAuth2 アクセストークンを取得（期限切れなら自動リフレッシュ）"""
-    token = os.environ.get("X_OAUTH2_ACCESS_TOKEN", "")
-    if not token:
-        raise RuntimeError("X_OAUTH2_ACCESS_TOKEN is not set")
-
-    # 有効性チェック
-    resp = requests.get(
-        "https://api.twitter.com/2/users/me",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=15,
-    )
-    if resp.status_code == 200:
-        return token
-
-    # 期限切れ → リフレッシュ
+def _refresh_access_token() -> str:
+    """リフレッシュトークンで新しいアクセストークンを取得"""
     refresh_token = os.environ.get("X_OAUTH2_REFRESH_TOKEN", "")
     client_id     = os.environ.get("X_CLIENT_ID", "")
     client_secret = os.environ.get("X_CLIENT_SECRET", "")
@@ -49,23 +35,37 @@ def _get_access_token() -> str:
     return new_token
 
 
+def _get_access_token() -> str:
+    """OAuth2 アクセストークンを返す"""
+    token = os.environ.get("X_OAUTH2_ACCESS_TOKEN", "")
+    if not token:
+        raise RuntimeError("X_OAUTH2_ACCESS_TOKEN is not set")
+    return token
+
+
 def _post_tweet(text: str, reply_to_id: str = None) -> str:
-    token   = _get_access_token()
     url     = "https://api.twitter.com/2/tweets"
     payload = {"text": text}
     if reply_to_id:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
 
-    resp = requests.post(
-        url,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=30,
-    )
-    if not resp.ok:
-        raise RuntimeError(f"Tweet failed {resp.status_code}: {resp.text}")
-    data = resp.json()
+    for attempt in range(2):
+        token = _get_access_token()
+        resp  = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=30,
+        )
+        if resp.status_code == 401 and attempt == 0:
+            print("  ↩ Access token expired, refreshing...")
+            _refresh_access_token()
+            continue
+        if not resp.ok:
+            raise RuntimeError(f"Tweet failed {resp.status_code}: {resp.text}")
+        break
 
+    data = resp.json()
     if "data" in data and "id" in data["data"]:
         return data["data"]["id"]
     raise RuntimeError(f"Unexpected response: {data}")
