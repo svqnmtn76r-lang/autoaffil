@@ -41,16 +41,22 @@ def _compose_video(img: str, audio: str, overlay: str, spec: dict, name: str) ->
         f"drawtext=text='{safe}':fontsize=56:fontcolor=white:"
         f"x=(w-text_w)/2:y=120:shadowcolor=black:shadowx=3:shadowy=3"
     )
-    cmd = [
-        "ffmpeg", "-y",
-        "-loop", "1", "-i", img,
-        "-i", audio,
-        "-vf", f"scale={spec['w']}:{spec['h']},setsar=1,{drawtext}",
-        "-c:v", "libx264", "-c:a", "aac",
-        "-shortest", "-r", str(spec["fps"]),
-        str(out_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    def _run(vf: str) -> subprocess.CompletedProcess:
+        return subprocess.run([
+            "ffmpeg", "-y",
+            "-loop", "1", "-i", img,
+            "-i", audio,
+            "-vf", vf,
+            "-c:v", "libx264", "-c:a", "aac",
+            "-shortest", "-r", str(spec["fps"]),
+            str(out_path),
+        ], capture_output=True, text=True)
+
+    result = _run(f"scale={spec['w']}:{spec['h']},setsar=1,{drawtext}")
+    if result.returncode != 0 and "No such filter" in result.stderr:
+        # drawtext unavailable (e.g. macOS system FFmpeg) — retry without overlay
+        result = _run(f"scale={spec['w']}:{spec['h']},setsar=1")
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg failed: {result.stderr[-500:]}")
     return str(out_path)
