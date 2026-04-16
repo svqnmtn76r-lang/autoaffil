@@ -2,8 +2,8 @@ import re
 import json
 import os
 import time
-import urllib.request
-import urllib.error
+import base64
+import requests
 from datetime import datetime, timezone
 
 
@@ -117,28 +117,22 @@ class MediumPoster:
             raise RuntimeError("GITHUB_TOKEN not set")
 
         # GitHub Contents API でファイルをプッシュ
-        path    = f"/repos/{self.REPO_OWNER}/{self.REPO_NAME}/contents/{filename}"
-        payload = json.dumps({
-            "message": f"Add affiliate article: {content.get('title','')}",
-            "content": __import__('base64').b64encode(html.encode()).decode(),
-        }).encode()
-
-        req = urllib.request.Request(
-            f"https://api.github.com{path}",
-            data=payload,
+        path = f"https://api.github.com/repos/{self.REPO_OWNER}/{self.REPO_NAME}/contents/{filename}"
+        resp = requests.put(
+            path,
             headers={
                 "Authorization": f"token {gh_token}",
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
-                "Content-Type": "application/json",
             },
-            method="PUT",
+            json={
+                "message": f"Add affiliate article: {content.get('title','')}",
+                "content": base64.b64encode(html.encode()).decode(),
+            },
+            timeout=30,
         )
-        try:
-            with urllib.request.urlopen(req) as resp:
-                resp.read()
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f"GitHub push failed {e.code}: {e.read().decode()}")
+        if not resp.ok:
+            raise RuntimeError(f"GitHub push failed {resp.status_code}: {resp.text}")
 
         article_url = f"{self.PAGES_BASE}/{filename}"
         print(f"  ✅ Article published: {article_url}")
