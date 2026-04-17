@@ -1,46 +1,50 @@
 import os
 import time
+import hmac
+import hashlib
 import base64
+import urllib.parse
+import secrets
 import requests
 
 
-def _refresh_access_token() -> str:
-    """リフレッシュトークンで新しいアクセストークンを取得"""
-    refresh_token = os.environ.get("X_OAUTH2_REFRESH_TOKEN", "")
-    client_id     = os.environ.get("X_CLIENT_ID", "")
-    client_secret = os.environ.get("X_CLIENT_SECRET", "")
-    if not refresh_token or not client_id:
-        raise RuntimeError("X OAuth2 refresh credentials not set")
+def _oauth1_header(method: str, url: str, extra_params: dict = None) -> str:
+    consumer_key    = os.environ["X_CONSUMER_KEY"]
+    consumer_secret = os.environ["X_CONSUMER_SECRET"]
+    access_token    = os.environ["X_ACCESS_TOKEN"]
+    token_secret    = os.environ["X_ACCESS_TOKEN_SECRET"]
 
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    data    = {"grant_type": "refresh_token", "refresh_token": refresh_token}
-    if client_secret:
-        creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-        headers["Authorization"] = f"Basic {creds}"
-    else:
-        data["client_id"] = client_id
+    params = {
+        "oauth_consumer_key":     consumer_key,
+        "oauth_nonce":            secrets.token_hex(16),
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp":        str(int(time.time())),
+        "oauth_token":            access_token,
+        "oauth_version":          "1.0",
+    }
+    if extra_params:
+        params.update(extra_params)
 
-    r = requests.post("https://api.x.com/2/oauth2/token", headers=headers, data=data, timeout=15)
-    if not r.ok:
-        raise RuntimeError(f"Token refresh failed {r.status_code}: {r.text}")
+    sorted_params = "&".join(
+        f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}"
+        for k, v in sorted(params.items())
+    )
+    base = "&".join([
+        method.upper(),
+        urllib.parse.quote(url, safe=""),
+        urllib.parse.quote(sorted_params, safe=""),
+    ])
+    signing_key = f"{urllib.parse.quote(consumer_secret, safe='')}&{urllib.parse.quote(token_secret, safe='')}"
+    sig = base64.b64encode(
+        hmac.new(signing_key.encode(), base.encode(), hashlib.sha1).digest()
+    ).decode()
+    params["oauth_signature"] = sig
 
-    new_token = r.json().get("access_token", "")
-    if not new_token:
-        raise RuntimeError(f"No access_token in refresh response: {r.text}")
-
-    os.environ["X_OAUTH2_ACCESS_TOKEN"] = new_token
-    if r.json().get("refresh_token"):
-        os.environ["X_OAUTH2_REFRESH_TOKEN"] = r.json()["refresh_token"]
-    print("  ✓ X OAuth2 token refreshed")
-    return new_token
-
-
-def _get_access_token() -> str:
-    """OAuth2 アクセストークンを返す"""
-    token = os.environ.get("X_OAUTH2_ACCESS_TOKEN", "")
-    if not token:
-        raise RuntimeError("X_OAUTH2_ACCESS_TOKEN is not set")
-    return token
+    return "OAuth " + ", ".join(
+        f'{urllib.parse.quote(k, safe="")}="{urllib.parse.quote(v, safe="")}"'
+        for k, v in sorted(params.items())
+        if k.startswith("oauth_")
+    )
 
 
 def _post_tweet(text: str, reply_to_id: str = None) -> str:
@@ -49,21 +53,15 @@ def _post_tweet(text: str, reply_to_id: str = None) -> str:
     if reply_to_id:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
 
-    for attempt in range(2):
-        token = _get_access_token()
-        resp  = requests.post(
-            url,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=payload,
-            timeout=30,
-        )
-        if resp.status_code == 401 and attempt == 0:
-            print("  ↩ Access token expired, refreshing...")
-            _refresh_access_token()
-            continue
-        if not resp.ok:
-            raise RuntimeError(f"Tweet failed {resp.status_code}: {resp.text}")
-        break
+    auth_header = _oauth1_header("POST", url)
+    resp = requests.post(
+        url,
+        headers={"Authorization": auth_header, "Content-Type": "application/json"},
+        json=payload,
+        timeout=30,
+    )
+    if not resp.ok:
+        raise RuntimeError(f"Tweet failed {resp.status_code}: {resp.text}")
 
     data = resp.json()
     if "data" in data and "id" in data["data"]:
