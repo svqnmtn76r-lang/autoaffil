@@ -1,0 +1,30 @@
+name: Daily Health Check
+
+on:
+  schedule:
+    - cron: '0 20 * * *'   # 毎日 06:00 Brisbane (AEST UTC+10)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run health check
+        env:
+          GITHUB_TOKEN:            ${{ secrets.GH_PAT }}
+          X_OAUTH2_ACCESS_TOKEN:   ${{ secrets.X_OAUTH2_ACCESS_TOKEN }}
+          X_OAUTH2_REFRESH_TOKEN:  ${{ secrets.X_OAUTH2_REFRESH_TOKEN }}
+          X_CLIENT_ID:             ${{ secrets.X_CLIENT_ID }}
+          X_CLIENT_SECRET:         ${{ secrets.X_CLIENT_SECRET }}
+          GOOGLE_SHEETS_CREDS:     ${{ secrets.GOOGLE_SHEETS_CREDS }}
+          SPREADSHEET_ID:          ${{ secrets.SPREADSHEET_ID }}
+        run: python scripts/health_check.py
