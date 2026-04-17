@@ -64,7 +64,23 @@ class InstagramPoster:
         container_id = resp["id"]
         print(f"  📦 コンテナ作成: {container_id}")
 
-        # Step 2: 公開
+        # Step 2: メディア処理完了を待機
+        for attempt in range(10):
+            time.sleep(6)
+            status = _graph("GET", container_id, {
+                "fields":       "status_code",
+                "access_token": self.page_token,
+            })
+            code = status.get("status_code", "")
+            print(f"  ⏳ ステータス: {code} (試行 {attempt+1}/10)")
+            if code == "FINISHED":
+                break
+            if code == "ERROR":
+                raise RuntimeError(f"メディア処理エラー: {status}")
+        else:
+            raise RuntimeError("メディア処理タイムアウト")
+
+        # Step 3: 公開
         resp2 = _graph("POST", f"{self.ig_id}/media_publish", {
             "creation_id":  container_id,
             "access_token": self.page_token,
