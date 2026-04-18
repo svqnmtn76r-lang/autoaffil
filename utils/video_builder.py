@@ -81,9 +81,16 @@ def _compose_video(img: str, audio: str, script: list, spec: dict, name: str) ->
         if seg.get("text_overlay")
     ]
 
+    ffmpeg_bin = next(
+        (p for p in ["/usr/local/opt/ffmpeg-full/bin/ffmpeg", "ffmpeg"]
+         if subprocess.run([p, "-version"], capture_output=True).returncode == 0
+         and b"drawtext" in subprocess.run([p, "-filters"], capture_output=True).stdout),
+        "ffmpeg"
+    )
+
     def _run(vf: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["ffmpeg", "-y", "-loop", "1", "-i", img, "-i", audio,
+            [ffmpeg_bin, "-y", "-loop", "1", "-i", img, "-i", audio,
              "-vf", vf, "-c:v", "libx264", "-c:a", "aac",
              "-shortest", "-r", str(fps), out_path],
             capture_output=True, text=True,
