@@ -89,18 +89,22 @@ def _compose_video(img: str, audio: str, script: list, spec: dict, name: str) ->
             capture_output=True, text=True,
         )
 
-    # フル品質で試行
+    def _no_drawtext(stderr: str) -> bool:
+        return "drawtext" in stderr or ("No such filter" in stderr)
+
+    # フル品質で試行（Ken Burns + 字幕）
     vf_full = ",".join([ken_burns] + caption_filters)
     result = _run(vf_full)
 
-    # Ken Burns非対応環境フォールバック
-    if result.returncode != 0 and "zoompan" in result.stderr:
-        vf_fallback = ",".join(
-            [f"scale={w}:{h},setsar=1"] + caption_filters
-        )
-        result = _run(vf_fallback)
+    if result.returncode != 0:
+        stderr = result.stderr
+        no_zoom = "zoompan" in stderr
+        no_text = _no_drawtext(stderr)
+        base = f"scale={w}:{h},setsar=1" if no_zoom else ken_burns
+        parts = [base] if no_text else [base] + caption_filters
+        result = _run(",".join(parts))
 
-    # 字幕なしフォールバック
+    # 最終フォールバック
     if result.returncode != 0:
         result = _run(f"scale={w}:{h},setsar=1")
 
