@@ -81,10 +81,16 @@ def _compose_video(img: str, audio: str, script: list, spec: dict, name: str) ->
         if seg.get("text_overlay")
     ]
 
+    def _supports_drawtext(path: str) -> bool:
+        try:
+            r = subprocess.run([path, "-filters"], capture_output=True)
+            return r.returncode == 0 and b"drawtext" in r.stdout
+        except FileNotFoundError:
+            return False
+
     ffmpeg_bin = next(
         (p for p in ["/usr/local/opt/ffmpeg-full/bin/ffmpeg", "ffmpeg"]
-         if subprocess.run([p, "-version"], capture_output=True).returncode == 0
-         and b"drawtext" in subprocess.run([p, "-filters"], capture_output=True).stdout),
+         if _supports_drawtext(p)),
         "ffmpeg"
     )
 
