@@ -4,30 +4,13 @@ import base64
 import requests
 
 
-def _update_github_secret(name: str, value: str) -> None:
-    gh_token = os.environ.get("AUTOAFFIL_GITHUB_TOKEN", "")
-    if not gh_token:
-        return
-    repo = "svqnmtn76r-lang/autoaffil"
+def _write_token_file(name: str, value: str) -> None:
+    """リフレッシュ後のトークンをファイルに書き出す（gh CLIでSecrets更新用）"""
     try:
-        from nacl import public as nacl_public
-        key_data = requests.get(
-            f"https://api.github.com/repos/{repo}/actions/secrets/public-key",
-            headers={"Authorization": f"token {gh_token}"},
-            timeout=10,
-        ).json()
-        pub_key = nacl_public.PublicKey(base64.b64decode(key_data["key"]))
-        encrypted = base64.b64encode(
-            nacl_public.SealedBox(pub_key).encrypt(value.encode())
-        ).decode()
-        requests.put(
-            f"https://api.github.com/repos/{repo}/actions/secrets/{name}",
-            headers={"Authorization": f"token {gh_token}", "Content-Type": "application/json"},
-            json={"encrypted_value": encrypted, "key_id": key_data["key_id"]},
-            timeout=10,
-        )
-    except Exception as e:
-        print(f"  ⚠️  GitHub Secret更新スキップ ({name}): {e}")
+        from pathlib import Path
+        Path(f"/tmp/autoaffil_{name}").write_text(value)
+    except Exception:
+        pass
 
 
 def _refresh_access_token() -> str:
@@ -57,8 +40,8 @@ def _refresh_access_token() -> str:
     os.environ["X_OAUTH2_ACCESS_TOKEN"] = new_access
     if new_refresh:
         os.environ["X_OAUTH2_REFRESH_TOKEN"] = new_refresh
-        _update_github_secret("X_OAUTH2_REFRESH_TOKEN", new_refresh)
-        _update_github_secret("X_OAUTH2_ACCESS_TOKEN", new_access)
+        _write_token_file("X_OAUTH2_REFRESH_TOKEN", new_refresh)
+        _write_token_file("X_OAUTH2_ACCESS_TOKEN", new_access)
 
     print("  ✓ X OAuth2 token refreshed")
     return new_access

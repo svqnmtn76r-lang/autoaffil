@@ -31,3 +31,16 @@ jobs:
           GOOGLE_SHEETS_CREDS:     ${{ secrets.GOOGLE_SHEETS_CREDS }}
           SPREADSHEET_ID:          ${{ secrets.SPREADSHEET_ID }}
         run: python main_runner.py --platform x
+
+      - name: Rotate X OAuth2 tokens in GitHub Secrets
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.AUTOAFFIL_GITHUB_TOKEN }}
+        run: |
+          for TOKEN in X_OAUTH2_REFRESH_TOKEN X_OAUTH2_ACCESS_TOKEN; do
+            FILE="/tmp/autoaffil_${TOKEN}"
+            if [ -f "$FILE" ]; then
+              gh secret set "$TOKEN" -b "$(cat $FILE)" --repo svqnmtn76r-lang/autoaffil
+              echo "✅ $TOKEN rotated in GitHub Secrets"
+            fi
+          done
