@@ -5,3 +5,4 @@ python-dotenv>=1.0.0
 google-auth>=2.30.0
 google-api-python-client>=2.130.0
 edge-tts>=6.1.9
+elevenlabs>=1.0.0

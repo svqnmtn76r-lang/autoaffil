@@ -16,16 +16,45 @@ SPECS = {
 TTS_VOICE = "en-US-GuyNeural"
 
 
-# ── ① edge-tts ───────────────────────────────────────────────────────────────
+# ── ① TTS: ElevenLabs優先、フォールバックはedge-tts ─────────────────────────
 
-async def _tts_async(text: str, path: str) -> None:
+ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"  # George (natural male)
+ELEVENLABS_MODEL    = "eleven_turbo_v2_5"
+
+
+def _tts_elevenlabs(text: str, path: str) -> None:
+    from elevenlabs.client import ElevenLabs
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("ELEVENLABS_API_KEY not set")
+    client = ElevenLabs(api_key=api_key)
+    audio = client.text_to_speech.convert(
+        text=text,
+        voice_id=ELEVENLABS_VOICE_ID,
+        model_id=ELEVENLABS_MODEL,
+        output_format="mp3_44100_128",
+    )
+    with open(path, "wb") as f:
+        for chunk in audio:
+            f.write(chunk)
+
+
+async def _tts_edge_async(text: str, path: str) -> None:
     import edge_tts
     await edge_tts.Communicate(text, TTS_VOICE).save(path)
 
 
 def _generate_tts(text: str, name: str) -> str:
     path = str(OUT_DIR / f"{name}_audio.mp3")
-    asyncio.run(_tts_async(text, path))
+    if os.environ.get("ELEVENLABS_API_KEY"):
+        try:
+            _tts_elevenlabs(text, path)
+            print("  ✓ TTS: ElevenLabs")
+            return path
+        except Exception as e:
+            print(f"  ⚠ ElevenLabs failed ({e}), falling back to edge-tts")
+    asyncio.run(_tts_edge_async(text, path))
+    print("  ✓ TTS: edge-tts")
     return path
 
 
