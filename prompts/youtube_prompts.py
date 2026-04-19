@@ -12,15 +12,15 @@ You are a YouTube Shorts viral content specialist (2026 algorithm).
 {
   "title": "SEO-optimized title with main keyword first #Shorts",
   "script": [
-    {"time": "0-3s",   "speech": "hook line",        "text_overlay": "HOOK TEXT"},
-    {"time": "3-20s",  "speech": "core value fast",  "text_overlay": "KEY STAT"},
-    {"time": "20-45s", "speech": "proof/demo",       "text_overlay": "RESULT"},
-    {"time": "45-60s", "speech": "loop CTA",         "text_overlay": "Watch again 👆"}
+    {"time": "0-3s",   "speech": "hook line",        "text_overlay": "HOOK TEXT",      "bg_image_prompt": "dramatic cinematic scene matching the hook, vertical 9:16"},
+    {"time": "3-20s",  "speech": "core value fast",  "text_overlay": "KEY STAT",       "bg_image_prompt": "infographic-style abstract background, vertical 9:16"},
+    {"time": "20-45s", "speech": "proof/demo",       "text_overlay": "RESULT",         "bg_image_prompt": "success lifestyle scene, vertical 9:16"},
+    {"time": "45-60s", "speech": "loop CTA",         "text_overlay": "Watch again 👆", "bg_image_prompt": "bold call-to-action background, neon accents, vertical 9:16"}
   ],
   "tts_narration": "full narration text for TTS (60s max)",
   "description": "description with affiliate link and disclosure",
   "hashtags": ["#Shorts", "#niche1", "#niche2", "#niche3"],
-  "bg_image_prompt": "background image prompt in English (vertical 9:16)"
+  "bg_image_prompt": "fallback background image prompt in English (vertical 9:16)"
 }
 """
 

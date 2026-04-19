@@ -16,7 +16,7 @@ SPECS = {
 TTS_VOICE = "en-US-GuyNeural"
 
 
-# ── ① edge-tts (無料) ────────────────────────────────────────────────────────
+# ── ① edge-tts ───────────────────────────────────────────────────────────────
 
 async def _tts_async(text: str, path: str) -> None:
     import edge_tts
@@ -29,16 +29,46 @@ def _generate_tts(text: str, name: str) -> str:
     return path
 
 
-# ── 背景画像 (Pollinations 無料) ──────────────────────────────────────────────
+# ── ④ 背景画像 (Pollinations, セグメント別並列生成) ───────────────────────────
 
 def _generate_image(prompt: str, name: str, w: int, h: int) -> str:
+    import time
     encoded = requests.utils.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{encoded}?width={w}&height={h}&nologo=true"
-    r = requests.get(url, timeout=60)
-    r.raise_for_status()
-    path = OUT_DIR / f"{name}_bg.jpg"
-    path.write_bytes(r.content)
-    return str(path)
+    for attempt in range(3):
+        try:
+            r = requests.get(url, timeout=120)
+            r.raise_for_status()
+            path = OUT_DIR / f"{name}_bg.jpg"
+            path.write_bytes(r.content)
+            return str(path)
+        except Exception as e:
+            if attempt == 2:
+                raise
+            time.sleep(5 * (attempt + 1))
+
+
+# ── ⑤ BGM生成 (FFmpeg lavfi, Cm アンビエントコード) ─────────────────────────
+
+def _generate_bgm(ffmpeg_bin: str, duration: int, name: str) -> str:
+    path = str(OUT_DIR / f"{name}_bgm.aac")
+    # C minor chord: C3(130.81) + G3(196) + C4(261.63) + Eb4(311.13)
+    expr = (
+        "sin(130.81*2*PI*t)*0.25"
+        "+sin(196.00*2*PI*t)*0.18"
+        "+sin(261.63*2*PI*t)*0.15"
+        "+sin(311.13*2*PI*t)*0.10"
+    )
+    total = duration + 5
+    fade_out_start = max(0, duration - 3)
+    result = subprocess.run(
+        [ffmpeg_bin, "-y",
+         "-f", "lavfi", "-i", f"aevalsrc={expr}:s=44100:d={total}",
+         "-af", f"afade=t=in:d=2,afade=t=out:st={fade_out_start}:d=3",
+         "-c:a", "aac", "-b:a", "96k", path],
+        capture_output=True, text=True,
+    )
+    return path if result.returncode == 0 else ""
 
 
 # ── ③ 字幕タイミングパーサ ────────────────────────────────────────────────────
@@ -61,70 +91,99 @@ def _drawtext(text: str, start: int, end: int) -> str:
     )
 
 
-# ── ② Ken Burns + ③ 字幕 合成 ────────────────────────────────────────────────
+# ── ② Ken Burns + セグメントクリップ生成 ─────────────────────────────────────
 
-def _compose_video(img: str, audio: str, script: list, spec: dict, name: str) -> str:
-    out_path = str(OUT_DIR / f"{name}.mp4")
-    w, h, fps = spec["w"], spec["h"], spec["fps"]
+def _supports_drawtext(path: str) -> bool:
+    try:
+        r = subprocess.run([path, "-filters"], capture_output=True)
+        return r.returncode == 0 and b"drawtext" in r.stdout
+    except FileNotFoundError:
+        return False
 
-    # ② Ken Burns: 1.0→1.3x ゆっくりズームイン
-    ken_burns = (
-        f"zoompan=z='min(zoom+0.0003\\,1.3)':d=1"
-        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-        f":s={w}x{h}:fps={fps},setsar=1"
-    )
 
-    # ③ タイミング付き字幕フィルター
-    caption_filters = [
-        _drawtext(seg["text_overlay"], *_parse_time(seg.get("time", "0-5s")))
-        for seg in script
-        if seg.get("text_overlay")
-    ]
-
-    def _supports_drawtext(path: str) -> bool:
-        try:
-            r = subprocess.run([path, "-filters"], capture_output=True)
-            return r.returncode == 0 and b"drawtext" in r.stdout
-        except FileNotFoundError:
-            return False
-
-    ffmpeg_bin = next(
+def _get_ffmpeg() -> str:
+    return next(
         (p for p in ["/usr/local/opt/ffmpeg-full/bin/ffmpeg", "ffmpeg"]
          if _supports_drawtext(p)),
         "ffmpeg"
     )
 
-    def _run(vf: str) -> subprocess.CompletedProcess:
+
+def _build_segment_clip(
+    ffmpeg_bin: str, img: str, duration: int, text: str,
+    w: int, h: int, fps: int, idx: int, name: str,
+) -> str:
+    out = str(OUT_DIR / f"{name}_seg{idx:02d}.mp4")
+    ken_burns = (
+        f"zoompan=z='min(zoom+0.0003\\,1.3)':d=1"
+        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        f":s={w}x{h}:fps={fps},setsar=1"
+    )
+    cap = _drawtext(text, 0, duration) if text else ""
+    vf = ",".join(filter(None, [ken_burns, cap]))
+
+    def run(vf_arg: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [ffmpeg_bin, "-y", "-loop", "1", "-i", img, "-i", audio,
-             "-vf", vf, "-c:v", "libx264", "-c:a", "aac",
-             "-shortest", "-r", str(fps), out_path],
+            [ffmpeg_bin, "-y", "-loop", "1", "-t", str(duration), "-i", img,
+             "-vf", vf_arg, "-c:v", "libx264", "-t", str(duration),
+             "-r", str(fps), "-pix_fmt", "yuv420p", out],
             capture_output=True, text=True,
         )
 
-    def _no_drawtext(stderr: str) -> bool:
-        return "drawtext" in stderr or ("No such filter" in stderr)
-
-    # フル品質で試行（Ken Burns + 字幕）
-    vf_full = ",".join([ken_burns] + caption_filters)
-    result = _run(vf_full)
-
+    result = run(vf)
     if result.returncode != 0:
-        stderr = result.stderr
-        no_zoom = "zoompan" in stderr
-        no_text = _no_drawtext(stderr)
+        no_zoom = "zoompan" in result.stderr
+        no_text = "drawtext" in result.stderr or "No such filter" in result.stderr
         base = f"scale={w}:{h},setsar=1" if no_zoom else ken_burns
-        parts = [base] if no_text else [base] + caption_filters
-        result = _run(",".join(parts))
-
-    # 最終フォールバック
+        fallback_vf = ",".join(filter(None, [base] + ([cap] if cap and not no_text else [])))
+        result = run(fallback_vf)
     if result.returncode != 0:
-        result = _run(f"scale={w}:{h},setsar=1")
-
+        result = run(f"scale={w}:{h},setsar=1")
     if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg failed: {result.stderr[-500:]}")
+        raise RuntimeError(f"Segment {idx} failed: {result.stderr[-300:]}")
+    return out
 
-    return out_path
+
+# ── クリップ結合 + 音声ミックス ───────────────────────────────────────────────
+
+def _concat_and_mix(
+    ffmpeg_bin: str, clips: list[str], tts: str, bgm: str, out: str,
+) -> str:
+    list_file = str(OUT_DIR / "concat.txt")
+    with open(list_file, "w") as f:
+        for c in clips:
+            f.write(f"file '{c}'\n")
+
+    concat_video = str(OUT_DIR / "concat_video.mp4")
+    r = subprocess.run(
+        [ffmpeg_bin, "-y", "-f", "concat", "-safe", "0", "-i", list_file,
+         "-c", "copy", concat_video],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"Concat failed: {r.stderr[-300:]}")
+
+    if bgm:
+        # BGMを小音量(weights=1 0.12)でTTSとミックス
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-i", concat_video, "-i", tts, "-i", bgm,
+            "-filter_complex", "[1:a][2:a]amix=inputs=2:weights=1 0.12:duration=first[a]",
+            "-map", "0:v", "-map", "[a]",
+            "-c:v", "copy", "-c:a", "aac", "-shortest", out,
+        ]
+    else:
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-i", concat_video, "-i", tts,
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "copy", "-c:a", "aac", "-shortest", out,
+        ]
+
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"Mix failed: {r.stderr[-300:]}")
+    return out
 
 
 # ── エントリポイント ──────────────────────────────────────────────────────────
@@ -132,10 +191,49 @@ def _compose_video(img: str, audio: str, script: list, spec: dict, name: str) ->
 def build(platform: str, content: dict, name: str) -> str:
     OUT_DIR.mkdir(exist_ok=True)
     spec = SPECS[platform]
+    w, h, fps = spec["w"], spec["h"], spec["fps"]
+    ffmpeg_bin = _get_ffmpeg()
 
-    audio = _generate_tts(content.get("tts_narration", ""), name)
-    image = _generate_image(
-        content.get("bg_image_prompt", "minimalist dark abstract background"),
-        name, spec["w"], spec["h"],
+    script = content.get("script", [])
+    fallback_prompt = content.get("bg_image_prompt", "minimalist dark abstract background")
+
+    tts = _generate_tts(content.get("tts_narration", ""), name)
+
+    # ④ セグメント別背景画像を逐次生成（Pollinationsレート制限対策）
+    import time as _time
+    seg_images: dict[int, str] = {}
+    if script:
+        for i, seg in enumerate(script):
+            prompt = seg.get("bg_image_prompt") or f"{fallback_prompt}, scene variation {i + 1}"
+            seg_images[i] = _generate_image(prompt, f"{name}_s{i:02d}", w, h)
+            if i < len(script) - 1:
+                _time.sleep(3)
+    else:
+        seg_images[0] = _generate_image(fallback_prompt, name, w, h)
+
+    # 総尺を計算してBGM生成
+    total_sec = (
+        sum(_parse_time(s.get("time", "0-5"))[1] - _parse_time(s.get("time", "0-5"))[0]
+            for s in script)
+        if script else 30
     )
-    return _compose_video(image, audio, content.get("script", []), spec, name)
+    bgm = _generate_bgm(ffmpeg_bin, total_sec, name)
+
+    # セグメント別クリップ生成
+    if script:
+        clips = []
+        for i, seg in enumerate(script):
+            start, end = _parse_time(seg.get("time", "0-5"))
+            duration = max(1, end - start)
+            clips.append(_build_segment_clip(
+                ffmpeg_bin, seg_images[i], duration,
+                seg.get("text_overlay", ""), w, h, fps, i, name,
+            ))
+    else:
+        duration = min(30, spec["max_sec"])
+        clips = [_build_segment_clip(
+            ffmpeg_bin, seg_images[0], duration, "", w, h, fps, 0, name,
+        )]
+
+    out = str(OUT_DIR / f"{name}.mp4")
+    return _concat_and_mix(ffmpeg_bin, clips, tts, bgm, out)
